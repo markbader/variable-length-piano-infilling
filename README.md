@@ -10,7 +10,7 @@ pip install git+https://github.com/reichang182/Transformer.git
 ```
 2. Clone this repo and install the required packages.
 ```
-git clone https://github.com/reichang182/variable-length-piano-infilling.git
+git clone git@github.com:markbader/variable-length-piano-infilling.git
 cd  variable-length-piano-infilling
 pip install -r requirement.txt
 ```
