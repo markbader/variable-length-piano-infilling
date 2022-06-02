@@ -100,6 +100,7 @@ if __name__ == "__main__":
     parser.add_argument('--end', type=str)
     parser.add_argument('--for-dir', type=str)
     parser.add_argument('--length', type=int, default=4)
+    parser.add_argument('--n-songs', type=int, default=1)
 
     # for prediction phase
     parser.add_argument('--ckpt-path', type=str, default="trained-model/loss34.ckpt", help='checkpoint to load.')
@@ -119,12 +120,12 @@ if __name__ == "__main__":
                     for i in range (1, 5):
                         data, gap_pos = prepare_data_for_prediction("worded_data_for_prediction.pickle", e2w=e2w, w2e=w2e, length=i)
                         print(f"Predict a midi file with begin: '{path1.stem}' and end: '{path2.stem}' starting prediction after bar: '{gap_pos}' for '{i}' bars ...")
-                        model.user_defined_predict(data=data, n_songs=10, target_start=gap_pos, target_end=gap_pos + i, filename=f"{path1.stem}__{path2.stem}.mid")
+                        model.user_defined_predict(data=data, n_songs=args.n_songs, target_start=gap_pos, target_end=gap_pos + i, filename=f"{path1.stem}__{path2.stem}.mid")
     else:
         convert_midis_to_worded_data(args.begin, args.end)
         data, gap_pos = prepare_data_for_prediction("worded_data_for_prediction.pickle", e2w=e2w, w2e=w2e, length=args.length)
 
         print(f"Predict a midi file with begin: '{args.begin}' and end: '{args.end}' starting prediction after bar: '{gap_pos}' for '{args.length}' bars ...")
-        model.user_defined_predict(data=data, n_songs=2, target_start=gap_pos, target_end=gap_pos + args.length, filename=f"{Path(args.begin).stem}__{args.length}__{Path(args.end).stem}.mid")
+        model.user_defined_predict(data=data, n_songs=args.n_songs, target_start=gap_pos, target_end=gap_pos + args.length, filename=f"{Path(args.begin).stem}__{args.length}__{Path(args.end).stem}.mid")
 
     torch.cuda.empty_cache()
