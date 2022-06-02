@@ -260,7 +260,7 @@ def construct_dict(save_dict_path):
 
         # Pitch: 22 ~ 107
         elif etype == 'Pitch':
-            for i in range(22, 108):
+            for i in range(21, 108):
                 e2w['Pitch %d' % i] = count
                 count += 1
 
@@ -270,9 +270,9 @@ def construct_dict(save_dict_path):
                 e2w['Duration %d' % i] = count
                 count += 1
 
-        # Velocity: 0 ~ 21
+        # Velocity: 0 ~ 21 # our values seem to be higher so I increased to 31
         elif etype == 'Velocity':
-            for i in range(22):
+            for i in range(32):
                 e2w['Velocity %d' % i] = count
                 count += 1
 
@@ -476,8 +476,6 @@ if __name__ == '__main__':
     parser.add_argument('--midi-folder', type=str, default='datasets/midi/midi_synchronized', help="Folder containing the midi files.")
     parser.add_argument('--save-folder', type=str, default='./', help="Folder to save worded_data and dictionary.")
     args = parser.parse_args()
-    
+
     # for loading training data
     convert_midis_to_worded_data(args.midi_folder, args.save_folder)
-
-

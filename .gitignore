@@ -1,0 +1,5 @@
+*.mid
+*.pickle
+trained-model/
+datasets/
+__pycache__/
