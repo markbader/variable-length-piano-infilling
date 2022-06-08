@@ -301,7 +301,7 @@ def construct_dict(save_dict_path):
 def load_tuple_event(files=None):
     data = []
     if files == None:
-        files = glob.glob(os.path.join(data_path, '*.midi'))
+        files = glob.glob(os.path.join(args.midi_folder, '*.midi'))
     for midifile in files:
         events = extract_tuple_events(midifile)
         events = group_by_bar(events)   # shape of events: [n_bars, n_notes_per_bar]
@@ -335,29 +335,6 @@ def tuple_event_to_word(data, dict_file=None, save_path=None):
     # assert(evented_data == data)
     with open(save_path, 'wb') as handle:
         pickle.dump(worded_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-
-
-
-
-def random_notes(bar_range, pos_range, pitch_range, duration_range, velocity_range):
-    bar = random.choice(bar_range)
-    pos = random.choice(pos_range)
-    pitch = random.choice(pitch_range)
-    duration = random.choice(duration_range)
-    velocity = random.choice(velocity_range)
-
-    # event = GroupEvent(bar, pos, pitch, duration, velocity)
-
-    words = [e2w['Bar']['Bar %d' % bar],
-             e2w['Position']['Position %s/16' % pos],
-             e2w['Pitch']['Pitch %d' % pitch],
-             e2w['Duration']['Duration %d' % duration],
-             e2w['Velocity']['Velocity %d' % velocity]]
-
-    return words
-
-
 
 def convert_midis_to_worded_data(midi_folder, save_folder):
     os.makedirs(save_folder, exist_ok=True)
