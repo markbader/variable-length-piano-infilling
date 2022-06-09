@@ -327,18 +327,18 @@ class XLNetForPredictingMiddleNotes(torch.nn.Module):
             else:
                 torch.save(self.state_dict(), path_saved_ckpt + '.ckpt')
 
-    def predict(self, data=None, song_idx=0, n_songs=10, target_start=6, target_end=9, filename=None, save_prediction_only=False):
-        datum = np.array(data[song_idx:song_idx + 1][0])[None]
+    def predict(self, data=None, song_id=0, n_predictions=10, start_bar=6, end_bar=9, filename=None, save_prediction_only=False):
+        datum = np.array(data[song_id:song_id + 1][0])[None]
         seq_len = datum.shape[1]
 
-        start_bar = np.nonzero(datum[0, :, 1] == target_start)[0][0]
-        end_bar   = np.nonzero(datum[0, :, 1] == target_end)[0][-1]
+        start_note = np.nonzero(datum[0, :, 1] == start_bar)[0][0]
+        end_note   = np.nonzero(datum[0, :, 1] == end_bar)[0][-1]
 
-        target_len = end_bar - start_bar
+        target_len = end_note - start_note
 
-        first_onset = datum[0, start_bar, [1, 2]]
-        first_onset_rel = np.copy(datum[0, start_bar, [1, 2]])
-        first_onset_rel[0] -= datum[0, start_bar - 1, 1]
+        first_onset = datum[0, start_note, [1, 2]]
+        first_onset_rel = np.copy(datum[0, start_note, [1, 2]])
+        first_onset_rel[0] -= datum[0, start_note - 1, 1]
 
         # Save absolute Bar IDs
         bar_ids_abs = np.copy(datum[:, :, 1])
@@ -348,16 +348,16 @@ class XLNetForPredictingMiddleNotes(torch.nn.Module):
         datum[:, :, 1][datum[:, :, 1] > 1] = 1  # avoid bug when there are empty bars
 
         # A_C -> AC
-        datum[:, start_bar : seq_len - target_len] = datum[:, start_bar + target_len :]
+        datum[:, start_note : seq_len - target_len] = datum[:, start_note + target_len :]
         datum = datum[:, : seq_len - target_len]
-        bar_ids_abs[:, start_bar : seq_len - target_len] = bar_ids_abs[:, start_bar + target_len :]
+        bar_ids_abs[:, start_note : seq_len - target_len] = bar_ids_abs[:, start_note + target_len :]
         bar_ids_abs = bar_ids_abs[:, : seq_len - target_len]
 
-        save_midi_folder = f"generated_midis/{target_end-target_start}bars"
+        save_midi_folder = f"generated_midis/{end_bar-start_bar}bars"
         os.makedirs(save_midi_folder, exist_ok=True)
 
-        for sidx in range(n_songs):
-            print(f'Predict bars: {target_start} to: {target_end} for MIDI: {filename}', end=' ... ')
+        for sidx in range(n_predictions):
+            print(f'Predict bars: {start_bar} to: {end_bar} for MIDI: {filename}', end=' ... ')
             input_ids = torch.from_numpy(datum).to(device)
             bar_ids = torch.from_numpy(bar_ids_abs).to(device)
 
@@ -417,18 +417,18 @@ class XLNetForPredictingMiddleNotes(torch.nn.Module):
             bar_ids = bar_ids.cpu().detach().numpy()[0]
             input_ids[:, 1] = bar_ids
 
-            generated_ids = input_ids[((input_ids[:, 1] >= target_start) & (input_ids[:, 1] <= target_end))]
+            generated_ids = input_ids[((input_ids[:, 1] >= start_bar) & (input_ids[:, 1] <= end_bar))]
             print('done.')
 
             if save_prediction_only:
-                generated_ids[:, 1] -= target_start
+                generated_ids[:, 1] -= start_bar
                 input_ids = generated_ids
             else:
                 # shift future context to end of prediction
                 max_predicted_bar =  max(generated_ids[:, 1])
-                input_ids[input_ids[:, 1] >= target_end][:, 1] -= target_end - max_predicted_bar
+                input_ids[input_ids[:, 1] >= end_bar][:, 1] -= end_bar - max_predicted_bar
 
-            if n_songs == 1:
+            if n_predictions == 1:
                 print(f'Saving midi to {save_midi_folder}/{filename}', end=' ... ')
                 to_midi(input_ids, self.w2e, os.path.join(save_midi_folder, filename))
             else:
@@ -478,5 +478,5 @@ if __name__ == '__main__':
         test_data = prepare_data.prepare_data_for_training(args.data_file, is_train=False, e2w=e2w, w2e=w2e, n_step_bars=args.n_step_bars, max_len=args.max_seq_len)
         model.load_state_dict(torch.load(args.ckpt_path))
         for i in range(0, len(test_data)):
-            model.predict(data=test_data, n_songs=2, song_idx=i, filename=f'song{i}_len4.midi')
+            model.predict(data=test_data, n_predictions=2, song_id=i, filename=f'song{i}_len4.midi')
             break

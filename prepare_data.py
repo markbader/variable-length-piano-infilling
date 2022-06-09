@@ -366,7 +366,7 @@ def prepare_data_for_training(data_file, e2w=None, w2e=None, is_train=True, n_st
         data = pickle.load(handle)
     print("Number of midis:", len(data))
 
-    n_bars_per_x = 16
+    n_bars_per_sample = 16
     bos_word = []
     eos_word = []
     pad_word = []
@@ -380,11 +380,11 @@ def prepare_data_for_training(data_file, e2w=None, w2e=None, is_train=True, n_st
     xs = []
     song_idx = []
     for song_id, midi in enumerate(data):
-        for start in range(0, len(midi) - n_bars_per_x + 1, n_step_bars):
-            x = midi[start:start+n_bars_per_x]
+        for start in range(0, len(midi) - n_bars_per_sample + 1, n_step_bars):
+            x = midi[start:start+n_bars_per_sample]
 
-            # assign bar number to each note (ranging from 0 ~ n_bars_per_x - 1)
-            for i in range(n_bars_per_x):
+            # assign bar number to each note (ranging from 0 ~ n_bars_per_sample - 1)
+            for i in range(n_bars_per_sample):
                 for note_tuple in x[i]:
                     note_tuple[1] = i
             # flatten list from [n_bars, n_notes, 5] to [n_bars * n_notes, 5]

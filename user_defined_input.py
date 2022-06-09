@@ -120,9 +120,9 @@ if __name__ == "__main__":
                         data, gap_pos = prepare_data_for_prediction("worded_data_for_prediction.pickle", e2w=e2w, w2e=w2e, length=i)
                         model.predict(
                             data=data,
-                            n_songs=args.n_songs,
-                            target_start=gap_pos,
-                            target_end=gap_pos + i,
+                            n_predictions=args.n_songs,
+                            start_bar=gap_pos,
+                            end_bar=gap_pos + i,
                             filename=f"{path1.stem}_to_{path2.stem}.mid",
                             save_prediction_only=True)
     else:
@@ -131,9 +131,9 @@ if __name__ == "__main__":
 
         model.predict(
             data=data,
-            n_songs=args.n_songs,
-            target_start=gap_pos,
-            target_end=gap_pos + args.length,
+            n_predictions=args.n_songs,
+            start_bar=gap_pos,
+            end_bar=gap_pos + args.length,
             filename=f"{Path(args.begin).stem}_to_{Path(args.end).stem}.mid",
             save_prediction_only=False)
 
