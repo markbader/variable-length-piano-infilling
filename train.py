@@ -188,7 +188,6 @@ class XLNetForPredictingMiddleNotes(torch.nn.Module):
 
         return ys
 
-
     def compute_loss(self, predict, target, loss_mask):
         loss = self.loss_func(predict, target)
         loss = loss * loss_mask
@@ -328,139 +327,18 @@ class XLNetForPredictingMiddleNotes(torch.nn.Module):
             else:
                 torch.save(self.state_dict(), path_saved_ckpt + '.ckpt')
 
-    def predict(self, data=None, n_songs=10, song_idx=0, target_start=None, target_len=None):
-        datum = np.array(data[song_idx:song_idx+1][0])[None]
-        seq_len = datum.shape[1]
-
-        start_bar6 = np.nonzero(datum[0, :, 1] == 6)[0][0]
-        end_bar9   = np.nonzero(datum[0, :, 1] == 9)[0][-1]
-
-        # target_len = np.random.randint(int((end_bar9 - start_bar6) * 0.5), end_bar9 - start_bar6 + 1)
-        target_len = end_bar9 - start_bar6
-        # target_start = np.random.randint(start_bar6, end_bar9 - target_len + 1)
-        target_start = start_bar6
-
-        print("Song idx: %d, song length: %d" % (song_idx, seq_len))
-        print("Target_start: %d, target_len: %d" % (target_start, target_len))
-
-        first_onset = datum[0, target_start, [1, 2]]
-        first_onset_rel = np.copy(datum[0, target_start, [1, 2]])
-        first_onset_rel[0] -= datum[0, target_start - 1, 1]
-        target_begin_token = [self.w2e[etype][datum[0, target_start, j]].split(' ')[1] for j, etype in enumerate(self.w2e)]
-        target_end_token = [self.w2e[etype][datum[0, target_start+target_len-1, j]].split(' ')[1] for j, etype in enumerate(self.w2e)]
-        save_midi_folder = "song%d_(start)bar%dpos%s_(end)bar%dpos%s" % (song_idx, int(target_begin_token[1])+1, target_begin_token[2], int(target_end_token[1])+1, target_end_token[2])
-        save_midi_folder = save_midi_folder.replace('/', '|')
-        os.makedirs(save_midi_folder, exist_ok=True)
-        print("save midi to `%s`" % save_midi_folder)
-
-        # Save prime
-        prime = np.concatenate([datum[0, :target_start], datum[0, target_start + target_len :]], axis=0)
-        to_midi(prime, self.w2e, os.path.join(save_midi_folder, "song%d_prime_len%d.midi" % (song_idx, seq_len - target_len)))
-
-        # Save absolute Bar IDs
-        bar_ids_abs = np.copy(datum[:, :, 1])
-
-        # abs -> rel Bar IDs
-        datum[:, 1:, 1] = datum[:, 1:, 1] - datum[:, :-1, 1]
-        datum[:, :, 1][datum[:, :, 1] > 1] = 1  # avoid bug when there are empty bars
-
-        # A_C -> AC
-        datum[:, target_start : seq_len - target_len] = datum[:, target_start + target_len :]
-        datum = datum[:, : seq_len - target_len]
-        bar_ids_abs[:, target_start : seq_len - target_len] = bar_ids_abs[:, target_start + target_len :]
-        bar_ids_abs = bar_ids_abs[:, : seq_len - target_len]
-
-        for sidx in range(n_songs):
-            input_ids = torch.from_numpy(datum).to(device)
-            bar_ids = torch.from_numpy(bar_ids_abs).to(device)
-
-            next_bar_abs = torch.tensor(first_onset[0]).long().to(device)
-            next_onset = torch.from_numpy(first_onset_rel).long().to(device)
-            condition_len = input_ids.shape[1]
-            attn_mask = None
-
-            while True:
-                input_ids = torch.cat([input_ids, self.mask_word[None, None]], dim=1)
-                input_ids_g = torch.clone(self.bos_word)
-                input_ids_g[[1, 2]] = next_onset
-                input_ids_g = input_ids_g[None, None]
-                bar_ids = torch.cat([bar_ids, next_bar_abs[None, None]], dim=-1)
-
-                # generate perm_mask
-                # 0: attend, 1: do not attend
-                perm_mask = torch.ones(1, input_ids.shape[1], input_ids.shape[1]).to(device)
-                perm_mask[0, :, :condition_len] = 0
-                for i in range(condition_len, input_ids.shape[1]):
-                    perm_mask[0, i, condition_len:i] = 0
-
-                # target mapping: partial prediction
-                target_mapping = torch.zeros(1, 1, input_ids.shape[1]).to(device)
-                target_mapping[0, 0, -1] = 1
-
-                y = self.forward(input_ids,
-                                 attn_mask,
-                                 perm_mask,
-                                 target_mapping,
-                                 bar_ids=bar_ids,
-                                 input_ids_g=input_ids_g)
-
-                # sampling
-                y_logits = []
-                for i, etype in enumerate(self.e2w):
-                    y_logits.append(y[i][0, -1, :])
-                cur_word = []
-                for i, etype in enumerate(self.e2w):
-                    cur_word.append(self.nucleus(y_logits[i], p=0.9, t=0.8))
-                cur_word = np.array(cur_word)
-
-                input_ids[0, -1, [1, 2]] = next_onset
-                input_ids[0, -1, [0, 3, 4, 5]] = torch.from_numpy(cur_word).to(device)[[0, 3, 4, 5]]
-                next_onset = torch.from_numpy(cur_word).to(device)[[1, 2]]
-                next_bar_abs = next_onset[0] + bar_ids[0, -1]
-
-                # if 'EOS' in self.w2e['Bar'][cur_word[1]]:
-                if cur_word[1] == 2:
-                    break
-                if 'EOS' in self.w2e['Position'][cur_word[2]]:
-                    break
-                if input_ids.shape[1] >= 1000:
-                    break
-
-            input_ids = input_ids.cpu().detach().numpy()[0]
-            bar_ids = bar_ids.cpu().detach().numpy()[0]
-            input_ids[:, 1] = bar_ids
-
-            to_midi(input_ids, self.w2e, os.path.join(save_midi_folder, "song%d_%d.midi" % (song_idx, sidx)))
-
-        print("=" * 80)
-
-    def user_defined_predict(self, data=None, n_songs=10, target_start=None, target_end=None, filename=None):
-        datum = np.array(data[0:1][0])[None]
+    def predict(self, data=None, song_idx=0, n_songs=10, target_start=6, target_end=9, filename=None, save_prediction_only=False):
+        datum = np.array(data[song_idx:song_idx + 1][0])[None]
         seq_len = datum.shape[1]
 
         start_bar = np.nonzero(datum[0, :, 1] == target_start)[0][0]
         end_bar   = np.nonzero(datum[0, :, 1] == target_end)[0][-1]
 
-        # target_len = np.random.randint(int((end_bar9 - start_bar6) * 0.5), end_bar9 - start_bar6 + 1)
         target_len = end_bar - start_bar
-        # target_start = np.random.randint(start_bar6, end_bar9 - target_len + 1)
-
-        #print("Song idx: %d, song length: %d" % (0, seq_len))
-        #print("Target_start: %d, target_len: %d" % (target_start, target_len))
 
         first_onset = datum[0, start_bar, [1, 2]]
         first_onset_rel = np.copy(datum[0, start_bar, [1, 2]])
         first_onset_rel[0] -= datum[0, start_bar - 1, 1]
-        target_begin_token = [self.w2e[etype][datum[0, start_bar, j]].split(' ')[1] for j, etype in enumerate(self.w2e)]
-        target_end_token = [self.w2e[etype][datum[0, start_bar+target_len, j]].split(' ')[1] for j, etype in enumerate(self.w2e)]
-        save_midi_folder = f"generated_midis/{target_end-target_start}bars" #"usersong_(start)bar%dpos%s_(end)bar%dpos%s" % (int(target_begin_token[1])+1, target_begin_token[2], int(target_end_token[1])+1, target_end_token[2])
-        os.makedirs(save_midi_folder, exist_ok=True)
-        print("save midi to `%s`" % save_midi_folder)
-
-        # Save prime
-        #prime = np.concatenate([datum[0, :target_start], datum[0, target_start + target_len :]], axis=0)
-        #print("prime\n", prime)
-        #to_midi(prime, self.w2e, os.path.join(save_midi_folder, "usersong_prime_len%d.midi" % (seq_len - target_len)))
 
         # Save absolute Bar IDs
         bar_ids_abs = np.copy(datum[:, :, 1])
@@ -475,7 +353,11 @@ class XLNetForPredictingMiddleNotes(torch.nn.Module):
         bar_ids_abs[:, start_bar : seq_len - target_len] = bar_ids_abs[:, start_bar + target_len :]
         bar_ids_abs = bar_ids_abs[:, : seq_len - target_len]
 
+        save_midi_folder = f"generated_midis/{target_end-target_start}bars"
+        os.makedirs(save_midi_folder, exist_ok=True)
+
         for sidx in range(n_songs):
+            print(f'Predict bars: {target_start} to: {target_end} for MIDI: {filename}', end=' ... ')
             input_ids = torch.from_numpy(datum).to(device)
             bar_ids = torch.from_numpy(bar_ids_abs).to(device)
 
@@ -534,12 +416,25 @@ class XLNetForPredictingMiddleNotes(torch.nn.Module):
             input_ids = input_ids.cpu().detach().numpy()[0]
             bar_ids = bar_ids.cpu().detach().numpy()[0]
             input_ids[:, 1] = bar_ids
-            input_ids = input_ids[((input_ids[:, 1] >= target_start) & (input_ids[:, 1] < target_end))]
-            input_ids[:, 1] -= target_start
+
+            generated_ids = input_ids[((input_ids[:, 1] >= target_start) & (input_ids[:, 1] <= target_end))]
+            print('done.')
+
+            if save_prediction_only:
+                generated_ids[:, 1] -= target_start
+                input_ids = generated_ids
+            else:
+                # shift future context to end of prediction
+                max_predicted_bar =  max(generated_ids[:, 1])
+                input_ids[input_ids[:, 1] >= target_end][:, 1] -= target_end - max_predicted_bar
+
             if n_songs == 1:
+                print(f'Saving midi to {save_midi_folder}/{filename}', end=' ... ')
                 to_midi(input_ids, self.w2e, os.path.join(save_midi_folder, filename))
             else:
+                print(f'Saving midi to {save_midi_folder}/{sidx}#_{filename}', end=' ... ')
                 to_midi(input_ids, self.w2e, os.path.join(save_midi_folder, f"{sidx}#_{filename}"))
+            print('done.')
 
         print("=" * 80)
 
@@ -569,7 +464,6 @@ if __name__ == '__main__':
     # for prediction phase
     parser.add_argument('--test-data-file', type=str, default='worded_data.pickle')
     parser.add_argument('--ckpt-path', type=str, default="trained-model/loss.ckpt", help='checkpoint to load.')
-    parser.add_argument('--song-idx', type=int, default=170)
 
     args = parser.parse_args()
     with open(args.dict_file, 'rb') as f:
@@ -584,5 +478,5 @@ if __name__ == '__main__':
         test_data = prepare_data.prepare_data_for_training(args.data_file, is_train=False, e2w=e2w, w2e=w2e, n_step_bars=args.n_step_bars, max_len=args.max_seq_len)
         model.load_state_dict(torch.load(args.ckpt_path))
         for i in range(0, len(test_data)):
-            model.predict(data=test_data, n_songs=2, song_idx=i)
+            model.predict(data=test_data, n_songs=2, song_idx=i, filename=f'song{i}_len4.midi')
             break

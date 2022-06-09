@@ -64,7 +64,6 @@ def convert_midis_to_worded_data(midi1, midi2):
 
     tuple_events = prepare_data.load_tuple_event(midis)
     save_data_path = 'worded_data_for_prediction.pickle'
-    print(midis)
 
     prepare_data.tuple_event_to_word(tuple_events, dict_file=args.dict_file, save_path=save_data_path)
 
@@ -96,8 +95,8 @@ if __name__ == "__main__":
 
     # training setup
     parser.add_argument('--dict-file', type=str, default='dictionary.pickle')
-    parser.add_argument('--begin', type=str)
-    parser.add_argument('--end', type=str)
+    parser.add_argument('--begin', type=str, default="begin_orig.mid")
+    parser.add_argument('--end', type=str, default="end_orig.mid")
     parser.add_argument('--for-dir', type=str)
     parser.add_argument('--length', type=int, default=4)
     parser.add_argument('--n-songs', type=int, default=1)
@@ -119,13 +118,23 @@ if __name__ == "__main__":
                     convert_midis_to_worded_data(path1, path2)
                     for i in range (1, 5):
                         data, gap_pos = prepare_data_for_prediction("worded_data_for_prediction.pickle", e2w=e2w, w2e=w2e, length=i)
-                        print(f"Predict a midi file with begin: '{path1.stem}' and end: '{path2.stem}' starting prediction after bar: '{gap_pos}' for '{i}' bars ...")
-                        model.user_defined_predict(data=data, n_songs=args.n_songs, target_start=gap_pos, target_end=gap_pos + i, filename=f"{path1.stem}__{path2.stem}.mid")
+                        model.predict(
+                            data=data,
+                            n_songs=args.n_songs,
+                            target_start=gap_pos,
+                            target_end=gap_pos + i,
+                            filename=f"{path1.stem}_to_{path2.stem}.mid",
+                            save_prediction_only=True)
     else:
         convert_midis_to_worded_data(args.begin, args.end)
         data, gap_pos = prepare_data_for_prediction("worded_data_for_prediction.pickle", e2w=e2w, w2e=w2e, length=args.length)
 
-        print(f"Predict a midi file with begin: '{args.begin}' and end: '{args.end}' starting prediction after bar: '{gap_pos}' for '{args.length}' bars ...")
-        model.user_defined_predict(data=data, n_songs=args.n_songs, target_start=gap_pos, target_end=gap_pos + args.length, filename=f"{Path(args.begin).stem}__{args.length}__{Path(args.end).stem}.mid")
+        model.predict(
+            data=data,
+            n_songs=args.n_songs,
+            target_start=gap_pos,
+            target_end=gap_pos + args.length,
+            filename=f"{Path(args.begin).stem}_to_{Path(args.end).stem}.mid",
+            save_prediction_only=False)
 
     torch.cuda.empty_cache()
