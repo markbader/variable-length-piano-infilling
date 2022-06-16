@@ -208,95 +208,85 @@ class XLNetForPredictingMiddleNotes(torch.nn.Module):
         optimizer = AdamW(self.parameters(), lr=args.init_lr, weight_decay=0.01)
         num_batches = len(training_data) // args.batch_size
 
-        # NEW for amp
-        scaler = torch.cuda.amp.GradScaler()
-
         for epoch in range(args.train_epochs):
             total_losses = 0
             for train_iter in range(num_batches):
 
-                #NEW for amp
-                with torch.cuda.amp.autocast():
-                    input_ids = torch.from_numpy(training_data[train_iter * args.batch_size : (train_iter + 1) * args.batch_size]).to(device)
-                    start_end_batch = start_end[train_iter * args.batch_size : (train_iter + 1) * args.batch_size]
+                input_ids = torch.from_numpy(training_data[train_iter * args.batch_size : (train_iter + 1) * args.batch_size]).to(device)
+                start_end_batch = start_end[train_iter * args.batch_size : (train_iter + 1) * args.batch_size]
 
-                    # attn_mask: mask to avoid attending to <PAD> tokens
-                    # 0: do not attend, 1: attend
-                    attn_mask = (input_ids[:, :, 0] != self.tempo_pad_word).float()
+                # attn_mask: mask to avoid attending to <PAD> tokens
+                # 0: do not attend, 1: attend
+                attn_mask = (input_ids[:, :, 0] != self.tempo_pad_word).float()
 
-                    # decide the range to be predicted: `target_start` to `target_start + target_len`
-                    valid_seq_lengths = [torch.nonzero(seq)[-1][0] + 1 for seq in attn_mask] # seq length without <PAD> tokens
-                    target_starts = [np.random.randint(int(seq_len * (1 - args.target_max_percent))) for seq_len in valid_seq_lengths]
-                    target_lens = [np.random.randint(int(seq_len * args.target_max_percent / 2), int(seq_len * args.target_max_percent)) for seq_len in valid_seq_lengths]
+                # decide the range to be predicted: `target_start` to `target_start + target_len`
+                valid_seq_lengths = [torch.nonzero(seq)[-1][0] + 1 for seq in attn_mask] # seq length without <PAD> tokens
+                target_starts = [np.random.randint(int(seq_len * (1 - args.target_max_percent))) for seq_len in valid_seq_lengths]
+                target_lens = [np.random.randint(int(seq_len * args.target_max_percent / 2), int(seq_len * args.target_max_percent)) for seq_len in valid_seq_lengths]
 
-                    # generate perm_mask
-                    # 0: attend, 1: do not attend
-                    perm_mask = torch.ones(args.batch_size, args.max_seq_len, args.max_seq_len).to(device)
-                    for b in range(args.batch_size):
-                        perm_mask[b, :, :target_starts[b]] = 0
-                        perm_mask[b, :, target_starts[b] + target_lens[b]:valid_seq_lengths[b]] = 0
-                        for i in range(target_starts[b], target_starts[b]+target_lens[b]):
-                            perm_mask[b, i, target_starts[b]:i] = 0
+                # generate perm_mask
+                # 0: attend, 1: do not attend
+                perm_mask = torch.ones(args.batch_size, args.max_seq_len, args.max_seq_len).to(device)
+                for b in range(args.batch_size):
+                    perm_mask[b, :, :target_starts[b]] = 0
+                    perm_mask[b, :, target_starts[b] + target_lens[b]:valid_seq_lengths[b]] = 0
+                    for i in range(target_starts[b], target_starts[b]+target_lens[b]):
+                        perm_mask[b, i, target_starts[b]:i] = 0
 
-                    # target mapping: partial prediction
-                    target_mapping = torch.zeros(args.batch_size, max(target_lens), args.max_seq_len).to(device)
-                    for b in range(args.batch_size):
-                        for i, j in enumerate(range(target_starts[b], target_starts[b]+target_lens[b])):
-                            target_mapping[b, i, j] = 1
+                # target mapping: partial prediction
+                target_mapping = torch.zeros(args.batch_size, max(target_lens), args.max_seq_len).to(device)
+                for b in range(args.batch_size):
+                    for i, j in enumerate(range(target_starts[b], target_starts[b]+target_lens[b])):
+                        target_mapping[b, i, j] = 1
 
-                    # change to use relative bar representation
-                    bar_ids = torch.clone(input_ids[:, :, 1]).detach()
-                    input_ids[:, 1:, 1] = input_ids[:, 1:, 1] - input_ids[:, :-1, 1]
-                    input_ids[:, :, 1][input_ids[:, :, 1] > 1] = 1  # avoid bug when there are empty bars
+                # change to use relative bar representation
+                bar_ids = torch.clone(input_ids[:, :, 1]).detach()
+                input_ids[:, 1:, 1] = input_ids[:, 1:, 1] - input_ids[:, :-1, 1]
+                input_ids[:, :, 1][input_ids[:, :, 1] > 1] = 1  # avoid bug when there are empty bars
 
-                    # prepare input_ids_g: use bar+pos instead of sin+cos embeddings as position information
-                    input_ids_g = torch.zeros(args.batch_size, max(target_lens), len(self.e2w)).long().to(device)
-                    for b in range(args.batch_size):
-                        input_ids_g[b, :target_lens[b]] = input_ids[b, target_starts[b]:target_starts[b]+target_lens[b]]
-                        input_ids_g[b, :target_lens[b], [0, 3, 4, 5]] = self.bos_word[[0, 3, 4, 5]]  # mask out tokens except bar & pos
+                # prepare input_ids_g: use bar+pos instead of sin+cos embeddings as position information
+                input_ids_g = torch.zeros(args.batch_size, max(target_lens), len(self.e2w)).long().to(device)
+                for b in range(args.batch_size):
+                    input_ids_g[b, :target_lens[b]] = input_ids[b, target_starts[b]:target_starts[b]+target_lens[b]]
+                    input_ids_g[b, :target_lens[b], [0, 3, 4, 5]] = self.bos_word[[0, 3, 4, 5]]  # mask out tokens except bar & pos
 
-                    y = self.forward(input_ids,
-                                    attn_mask,
-                                    perm_mask,
-                                    target_mapping,
-                                    bar_ids=bar_ids,
-                                    input_ids_g=input_ids_g)
+                y = self.forward(input_ids,
+                                attn_mask,
+                                perm_mask,
+                                target_mapping,
+                                bar_ids=bar_ids,
+                                input_ids_g=input_ids_g)
 
-                    # reshape (b, s, f) -> (b, f, s)
-                    for i, etype in enumerate(self.e2w):
-                        y[i] = y[i][:, ...].permute(0, 2, 1)
+                # reshape (b, s, f) -> (b, f, s)
+                for i, etype in enumerate(self.e2w):
+                    y[i] = y[i][:, ...].permute(0, 2, 1)
 
 
-                    # calculate losses
-                    target = torch.zeros(args.batch_size, max(target_lens), len(self.e2w), dtype=torch.long).to(device)
-                    loss_mask = torch.zeros(args.batch_size, max(target_lens))
-                    for b in range(args.batch_size):
-                        target[b, :target_lens[b], [0, 3, 4, 5]] = input_ids[b, target_starts[b]:target_starts[b]+target_lens[b], [0, 3, 4, 5]]
+                # calculate losses
+                target = torch.zeros(args.batch_size, max(target_lens), len(self.e2w), dtype=torch.long).to(device)
+                loss_mask = torch.zeros(args.batch_size, max(target_lens))
+                for b in range(args.batch_size):
+                    target[b, :target_lens[b], [0, 3, 4, 5]] = input_ids[b, target_starts[b]:target_starts[b]+target_lens[b], [0, 3, 4, 5]]
 
-                        # next onset prediction
-                        target[b, :target_lens[b]-1, [1, 2]] = input_ids[b, target_starts[b]+1:target_starts[b]+target_lens[b], [1, 2]]
-                        target[b, target_lens[b]-1, 1] = 2  # <REL-BAR EOS>
-                        target[b, target_lens[b]-1, 2] = self.eos_word[2]
+                    # next onset prediction
+                    target[b, :target_lens[b]-1, [1, 2]] = input_ids[b, target_starts[b]+1:target_starts[b]+target_lens[b], [1, 2]]
+                    target[b, target_lens[b]-1, 1] = 2  # <REL-BAR EOS>
+                    target[b, target_lens[b]-1, 2] = self.eos_word[2]
 
-                        loss_mask[b, :target_lens[b]] = 1
-                    losses = []
-                    for i, etype in enumerate(self.e2w):
-                        losses.append(self.compute_loss(y[i], target[..., i].to(device), loss_mask.to(device)))
-                    total_loss = sum(losses) / len(self.e2w)
+                    loss_mask[b, :target_lens[b]] = 1
+                losses = []
+                for i, etype in enumerate(self.e2w):
+                    losses.append(self.compute_loss(y[i], target[..., i].to(device), loss_mask.to(device)))
+                total_loss = sum(losses) / len(self.e2w)
 
                 # udpate
                 self.zero_grad()
 
-                #NEW for amp
-                #old: total_loss.backward()
-                scaler.scale(total_loss).backward()
+                total_loss.backward()
 
                 clip_grad_norm_(self.parameters(), 3.0)
 
-                #NEW for amp
-                #old: optimizer.step()
-                scaler.step(optimizer)
-                scaler.update()
+                optimizer.step()
 
 
                 # acc
@@ -478,5 +468,5 @@ if __name__ == '__main__':
         test_data = prepare_data.prepare_data_for_training(args.data_file, is_train=False, e2w=e2w, w2e=w2e, n_step_bars=args.n_step_bars, max_len=args.max_seq_len)
         model.load_state_dict(torch.load(args.ckpt_path))
         for i in range(0, len(test_data)):
-            model.predict(data=test_data, n_predictions=2, song_id=i, filename=f'song{i}_len4.midi')
-            break
+           model.predict(data=test_data, n_predictions=2, song_id=i, filename=f'song{i}_len4.midi')
+           break
