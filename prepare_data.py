@@ -377,29 +377,29 @@ def prepare_data_for_training(data_file, e2w=None, w2e=None, is_train=True, n_st
 
     # shape of data: [n_midi, n_bars, n_notes, 5]. Last dimension is 6 since it contains `tempo, bar, position, pitch, duration and velocity`
     x_lens = []
-    xs = []
-    song_idx = []
-    for song_id, midi in enumerate(data):
+    samples = []
+    for midi in data:
         for start in range(0, len(midi) - n_bars_per_sample + 1, n_step_bars):
-            x = midi[start:start+n_bars_per_sample]
+            sample = midi[start:start+n_bars_per_sample]
 
             # assign bar number to each note (ranging from 0 ~ n_bars_per_sample - 1)
             for i in range(n_bars_per_sample):
-                for note_tuple in x[i]:
+                for note_tuple in sample[i]:
                     note_tuple[1] = i
+
             # flatten list from [n_bars, n_notes, 5] to [n_bars * n_notes, 5]
-            x = [copy.deepcopy(note_tuple) for bar in x for note_tuple in bar]
+            sample = [copy.deepcopy(note_tuple) for bar in sample for note_tuple in bar]
 
             if is_train:
-                if len(x) <= max_len:
-                    while len(x) < max_len:
-                        x.append(pad_word)
-                    xs.append(x)
-                    x_lens.append(len(x))
+                if len(sample) <= max_len:
+                    while len(sample) < max_len:
+                        sample.append(pad_word)
+                    samples.append(sample)
+                    x_lens.append(len(sample))
             else:
-                if len(x) <= max_len:
-                    xs.append(x)
-                    x_lens.append(len(x))
+                if len(sample) <= max_len:
+                    samples.append(sample)
+                    x_lens.append(len(sample))
 
     # statistics of x
     print("=" * 70)
@@ -408,13 +408,13 @@ def prepare_data_for_training(data_file, e2w=None, w2e=None, is_train=True, n_st
 
 
     # shuffle
-    xs = np.array(xs)
+    samples = np.array(samples)
     if is_train:
-        index = np.arange(len(xs))
+        index = np.arange(len(samples))
         np.random.shuffle(index)
-        xs = xs[index]
+        samples = samples[index]
 
-    return xs
+    return samples
 
 def split_data(data_file):
     dirname = os.path.dirname(data_file)
