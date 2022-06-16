@@ -303,11 +303,13 @@ def load_tuple_event(files=None):
     if files == None:
         files = glob.glob(os.path.join(args.midi_folder, '*.midi'))
     for midifile in files:
-        events = extract_tuple_events(midifile)
-        events = group_by_bar(events)   # shape of events: [n_bars, n_notes_per_bar]
-        # TODO song too long?
-        data.append(events)
-
+        try:
+            events = extract_tuple_events(midifile)
+            events = group_by_bar(events)   # shape of events: [n_bars, n_notes_per_bar]
+            # TODO song too long?
+            data.append(events)
+        except Exception as e:
+            print(f'Skipped {midifile} because: {e}')
 
     return data
 
@@ -384,12 +386,11 @@ def prepare_data_for_training(data_file, e2w=None, w2e=None, is_train=True, n_st
         #assign bar number to each note
         for i in range(len(sample)):
             for note_tuple in sample[i]:
-                note_tuple[i] = i
+                note_tuple[1] = i
 
         sample = [copy.deepcopy(note_tuple) for bar in sample for note_tuple in bar]
 
-        samples.append(sample)
-        x_lens.append(len(sample))
+
         # for start in range(0, len(midi) - n_bars_per_sample + 1, n_step_bars):
         #     sample = midi[start:start+n_bars_per_sample]
 
@@ -401,16 +402,16 @@ def prepare_data_for_training(data_file, e2w=None, w2e=None, is_train=True, n_st
         #     # flatten list from [n_bars, n_notes, 5] to [n_bars * n_notes, 5]
         #     sample = [copy.deepcopy(note_tuple) for bar in sample for note_tuple in bar]
 
-        #     if is_train:
-        #         if len(sample) <= max_len:
-        #             while len(sample) < max_len:
-        #                 sample.append(pad_word)
-        #             samples.append(sample)
-        #             x_lens.append(len(sample))
-        #     else:
-        #         if len(sample) <= max_len:
-        #             samples.append(sample)
-        #             x_lens.append(len(sample))
+        if is_train:
+            if len(sample) <= max_len:
+                while len(sample) < max_len:
+                    sample.append(pad_word)
+                samples.append(sample)
+                x_lens.append(len(sample))
+        else:
+            if len(sample) <= max_len:
+                samples.append(sample)
+                x_lens.append(len(sample))
 
     # statistics of x
     print("=" * 70)
