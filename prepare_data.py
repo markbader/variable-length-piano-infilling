@@ -344,7 +344,7 @@ def convert_midis_to_worded_data(midi_folder, save_folder):
     midis = []
     for root, dirs, files in os.walk(midi_folder):
         for f in files:
-            if f[-4:] == '.mid':
+            if f[-4:] == '.mid' or f[-5:] == '.midi':
                 try:
                     note_items, tempo_items = utils.read_items(os.path.join(root, f))
                     midis.append(os.path.join(root, f))
