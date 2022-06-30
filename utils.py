@@ -1,7 +1,8 @@
 import chord_recognition
 import numpy as np
-import miditoolkit
-import copy
+from miditoolkit.midi import parser, containers
+from typing import List
+import sys
 
 # parameters for input
 DEFAULT_VELOCITY_BINS = np.linspace(0, 128, 32+1, dtype=np.int)
@@ -10,7 +11,7 @@ DEFAULT_DURATION_BINS = np.arange(60, 3841, 60, dtype=int)
 DEFAULT_TEMPO_INTERVALS = [range(30, 90), range(90, 150), range(150, 210)]
 
 # parameters for output
-DEFAULT_RESOLUTION = 480
+DEFAULT_RESOLUTION = 1024
 
 # define "Item" for general storage
 class Item(object):
@@ -27,7 +28,7 @@ class Item(object):
 
 # read notes and tempo changes from midi (assume there is only one track) -> assume there are multiple tracks
 def read_items(file_path):
-    midi_obj = miditoolkit.midi.parser.MidiFile(file_path)
+    midi_obj = parser.MidiFile(file_path)
     # note
     all_note_items = [[] for _ in range(len(midi_obj.instruments))]
     for i, instrument in enumerate(midi_obj.instruments):
@@ -41,6 +42,7 @@ def read_items(file_path):
                 velocity=note.velocity,
                 pitch=note.pitch))
         all_note_items[i].sort(key=lambda x: x.start)
+
     # tempo
     tempo_items = []
     for tempo in midi_obj.tempo_changes:
@@ -51,6 +53,12 @@ def read_items(file_path):
             velocity=None,
             pitch=int(tempo.tempo)))
     tempo_items.sort(key=lambda x: x.start)
+
+    # time_signature
+    time_signatures = []
+    for time_signature in midi_obj.time_signature_changes:
+        time_signatures.append(time_signature)
+
     # expand to all beat
     max_tick = tempo_items[-1].start
     existing_ticks = {item.start: item.pitch for item in tempo_items}
@@ -72,7 +80,8 @@ def read_items(file_path):
                 velocity=None,
                 pitch=output[-1].pitch))
     tempo_items = output
-    return all_note_items, tempo_items
+
+    return all_note_items, tempo_items, time_signatures
 
 # quantize items
 def quantize_items(items, ticks=120):
@@ -102,17 +111,29 @@ def extract_chords(items):
             pitch=chord[2].split('/')[0]))
     return output
 
-# group items
-def group_items(items, max_time, ticks_per_bar=DEFAULT_RESOLUTION*4):
+
+def group_items(items: List[Item], max_time: int, time_signatures: List[containers.TimeSignature]) -> List[List[Item]]:
     items.sort(key=lambda x: x.start)
-    downbeats = np.arange(0, max_time+ticks_per_bar, ticks_per_bar)
+    n_time_signatures = len(time_signatures) - 1
     groups = []
-    for db1, db2 in zip(downbeats[:-1], downbeats[1:]):
+
+    downbeats = []
+    for index, time_signature in enumerate(time_signatures):
+        current_bar_start = time_signature.time
+        ticks_per_bar = DEFAULT_RESOLUTION * 4 * time_signature.numerator // time_signature.denominator
+        if index < n_time_signatures:
+            # create bars from start to next time_signature change
+            downbeats += [i for i in range(current_bar_start, time_signatures[index + 1].time, ticks_per_bar)]
+        else:
+            # create bars until the end of song
+            downbeats += [i for i in range(current_bar_start, max_time + ticks_per_bar, ticks_per_bar)]
+
+    for start, end in zip(downbeats, downbeats[1:]):
         insiders = []
         for item in items:
-            if (item.start >= db1) and (item.start < db2):
+            if (item.start >= start) and (item.start < end):
                 insiders.append(item)
-        overall = [db1] + insiders + [db2]
+        overall = [start] + insiders + [end]
         groups.append(overall)
     return groups
 
@@ -259,7 +280,7 @@ def write_midi(words, word2event, output_path, prompt_path=None):
             temp_tempos.append([position, tempo])
     # get specific time for notes
     ticks_per_beat = DEFAULT_RESOLUTION
-    ticks_per_bar = DEFAULT_RESOLUTION * 4 # assume 4/4
+    ticks_per_bar = DEFAULT_RESOLUTION * 4 # TODO: assume 4/4
     notes = []
     current_bar = 0
     for note in temp_notes:
@@ -274,7 +295,7 @@ def write_midi(words, word2event, output_path, prompt_path=None):
             st = flags[position]
             # duration (end time)
             et = st + duration
-            notes.append(miditoolkit.Note(velocity, pitch, st, et))
+            notes.append(containers.Note(velocity, pitch, st, et))
     # get specific time for chords
     if len(temp_chords) > 0:
         chords = []
@@ -306,7 +327,7 @@ def write_midi(words, word2event, output_path, prompt_path=None):
             tempos.append([int(st), value])
     # write
     if prompt_path:
-        midi = miditoolkit.midi.parser.MidiFile(prompt_path)
+        midi = parser.MidiFile(prompt_path)
         #
         last_time = DEFAULT_RESOLUTION * 4 * 4
         # note shift
@@ -323,30 +344,29 @@ def write_midi(words, word2event, output_path, prompt_path=None):
                 break
         for st, bpm in tempos:
             st += last_time
-            temp_tempos.append(miditoolkit.midi.containers.TempoChange(bpm, st))
+            temp_tempos.append(containers.TempoChange(bpm, st))
         midi.tempo_changes = temp_tempos
         # write chord into marker
         if len(temp_chords) > 0:
             for c in chords:
                 midi.markers.append(
-                    miditoolkit.midi.containers.Marker(text=c[1], time=c[0]+last_time))
+                    containers.Marker(text=c[1], time=c[0]+last_time))
     else:
-        midi = miditoolkit.midi.parser.MidiFile()
+        midi = parser.MidiFile()
         midi.ticks_per_beat = DEFAULT_RESOLUTION
         # write instrument
-        inst = miditoolkit.midi.containers.Instrument(0, is_drum=False)
+        inst = containers.Instrument(0, is_drum=False)
         inst.notes = notes
         midi.instruments.append(inst)
         # write tempo
         tempo_changes = []
         for st, bpm in tempos:
-            tempo_changes.append(miditoolkit.midi.containers.TempoChange(bpm, st))
+            tempo_changes.append(containers.TempoChange(bpm, st))
         midi.tempo_changes = tempo_changes
         # write chord into marker
         if len(temp_chords) > 0:
             for c in chords:
                 midi.markers.append(
-                    miditoolkit.midi.containers.Marker(text=c[1], time=c[0]))
+                    containers.Marker(text=c[1], time=c[0]))
     # write
     midi.dump(output_path)
-

@@ -14,15 +14,6 @@ import statistics
 GroupEvent = collections.namedtuple('GroupEvent', ['Tempo', 'Bar', 'Position', 'Pitch', 'Duration', 'Velocity'])
 tempo_quantize_step = 4
 
-def extract_events(input_path):
-    note_items, tempo_items = utils.read_items(input_path)
-    note_items = utils.quantize_items(note_items)
-    max_time = note_items[-1].end
-    items = tempo_items + note_items
-    groups = utils.group_items(items, max_time)
-    events = utils.item2event(groups)
-    return events
-
 def convert_to_tuple_events(events, tempo_items):
     # `events` should be a list containing events like below:
     # Event(name=Bar, time=None, value=None, text=1)
@@ -175,12 +166,15 @@ def item2event(groups):
 
 # extract events: each event is a tuple (Bar, Position, Pitch, Duration, Velocity)
 def extract_tuple_events(input_path):
-    note_items, tempo_items = utils.read_items(input_path)
+    note_items, tempo_items, time_signatures = utils.read_items(input_path)
     note_items = note_items[0] # assume there is only 1 track, so this get the first track
     note_items = utils.quantize_items(note_items)
     max_time = note_items[-1].end
     items = tempo_items + note_items
-    groups = utils.group_items(items, max_time)
+    groups = utils.group_items(items, max_time, time_signatures)
+    print(len(groups))
+    if len(groups) != 16:
+        print(input_path)
     # events = utils.item2event(groups)
     events = item2event(groups)
     # print(*events, sep='\n')
@@ -254,8 +248,8 @@ def construct_dict(save_dict_path):
 
         # Position: 0/16 ~ 15/16
         elif etype == 'Position':
-            for i in range(0, 16):
-                e2w['Position %d/16' % i] = count
+            for i in range(0, utils.DEFAULT_FRACTION):
+                e2w[f'Position {i}/{utils.DEFAULT_FRACTION}'] = count
                 count += 1
 
         # Pitch: 22 ~ 107
@@ -346,7 +340,7 @@ def convert_midis_to_worded_data(midi_folder, save_folder):
         for f in files:
             if f[-4:] == '.mid' or f[-5:] == '.midi':
                 try:
-                    note_items, tempo_items = utils.read_items(os.path.join(root, f))
+                    note_items, tempo_items, time_signatures = utils.read_items(os.path.join(root, f))
                     midis.append(os.path.join(root, f))
                 except Exception as e:
                     pass
@@ -462,7 +456,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='')
 
     # training setup
-    parser.add_argument('--midi-folder', type=str, default='datasets/midi/midi_synchronized', help="Folder containing the midi files.")
+    parser.add_argument('--midi-folder', type=str, default='datasets/valid_output', help="Folder containing the midi files.")
     parser.add_argument('--save-folder', type=str, default='./', help="Folder to save worded_data and dictionary.")
     args = parser.parse_args()
 
