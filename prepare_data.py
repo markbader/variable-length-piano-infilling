@@ -1,13 +1,10 @@
 import utils
 import pickle
-import os
-import sys
 import collections
 import numpy as np
 import miditoolkit
 from fractions import Fraction
-import glob
-import random
+from pathlib import Path
 import copy
 import statistics
 
@@ -172,9 +169,6 @@ def extract_tuple_events(input_path):
     max_time = note_items[-1].end
     items = tempo_items + note_items
     groups = utils.group_items(items, max_time, time_signatures)
-    print(len(groups))
-    if len(groups) != 16:
-        print(input_path)
     # events = utils.item2event(groups)
     events = item2event(groups)
     # print(*events, sep='\n')
@@ -226,7 +220,7 @@ def group_by_bar(events):
 
     return grouped_events
 
-def construct_dict(save_dict_path):
+def construct_dict(save_dict_path: Path):
     event2word = {}
     word2event = {}
 
@@ -284,9 +278,9 @@ def construct_dict(save_dict_path):
         event2word[etype] = e2w
         word2event[etype] = {e2w[key]: key for key in e2w}
 
-    print(event2word)
-    print("=" * 80)
-    print(word2event)
+    # print(event2word)
+    # print("=" * 80)
+    # print(word2event)
 
     with open(save_dict_path, 'wb') as f:
         pickle.dump([event2word, word2event], f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -294,20 +288,24 @@ def construct_dict(save_dict_path):
 
 def load_tuple_event(files=None):
     data = []
+    counter = 0
     if files == None:
-        files = glob.glob(os.path.join(args.midi_folder, '*.midi'))
+        raise ValueError('No MIDI files in given folder.')
     for midifile in files:
         try:
             events = extract_tuple_events(midifile)
             events = group_by_bar(events)   # shape of events: [n_bars, n_notes_per_bar]
-            # TODO song too long?
+            assert len(events) <= 16, f"Expected lenght of 16 bars but got {len(events)}"
             data.append(events)
+            counter += 1
         except Exception as e:
             print(f'Skipped {midifile} because: {e}')
+    print('=' * 70)
+    print(f'Extracted {counter} of {len(files)} MIDI files.')
 
     return data
 
-def tuple_event_to_word(data, dict_file=None, save_path=None):
+def tuple_event_to_word(data, dict_file:Path=None, save_path:Path=None):
     with open(dict_file, 'rb') as f:
         e2w, w2e = pickle.load(f)
 
@@ -332,29 +330,23 @@ def tuple_event_to_word(data, dict_file=None, save_path=None):
     with open(save_path, 'wb') as handle:
         pickle.dump(worded_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-def convert_midis_to_worded_data(midi_folder, save_folder):
-    os.makedirs(save_folder, exist_ok=True)
+def convert_midis_to_worded_data(midi_folder: Path, save_folder: Path):
+    save_folder.mkdir(parents=True, exist_ok=True)
 
     midis = []
-    for root, dirs, files in os.walk(midi_folder):
-        for f in files:
-            if f[-4:] == '.mid' or f[-5:] == '.midi':
-                try:
-                    note_items, tempo_items, time_signatures = utils.read_items(os.path.join(root, f))
-                    midis.append(os.path.join(root, f))
-                except Exception as e:
-                    pass
+    for ext in ("*.mid", "*.midi"):
+        midis.extend(midi_folder.rglob(ext))
 
     print("number of midis:", len(midis))
 
     tuple_events = load_tuple_event(midis)
-    save_data_path = os.path.join(save_folder, 'worded_data.pickle')
-    save_dict_path = os.path.join(save_folder, 'dictionary.pickle')
+    save_data_path = save_folder / 'worded_data.pickle'
+    save_dict_path = save_folder / 'dictionary.pickle'
 
     construct_dict(save_dict_path)
     tuple_event_to_word(tuple_events, dict_file=save_dict_path, save_path=save_data_path)
 
-def prepare_data_for_training(data_file, e2w=None, w2e=None, is_train=True, n_step_bars=16, max_len=512):
+def prepare_data_for_training(data_file, e2w=None, w2e=None, is_train=True, n_step_bars=16, max_len=1024):
     assert e2w != None and w2e != None
 
     print("Loading from data file: %s" % data_file)
@@ -384,18 +376,6 @@ def prepare_data_for_training(data_file, e2w=None, w2e=None, is_train=True, n_st
 
         sample = [copy.deepcopy(note_tuple) for bar in sample for note_tuple in bar]
 
-
-        # for start in range(0, len(midi) - n_bars_per_sample + 1, n_step_bars):
-        #     sample = midi[start:start+n_bars_per_sample]
-
-        #     # assign bar number to each note (ranging from 0 ~ n_bars_per_sample - 1)
-        #     for i in range(n_bars_per_sample):
-        #         for note_tuple in sample[i]:
-        #             note_tuple[1] = i
-
-        #     # flatten list from [n_bars, n_notes, 5] to [n_bars * n_notes, 5]
-        #     sample = [copy.deepcopy(note_tuple) for bar in sample for note_tuple in bar]
-
         if is_train:
             if len(sample) <= max_len:
                 while len(sample) < max_len:
@@ -422,33 +402,6 @@ def prepare_data_for_training(data_file, e2w=None, w2e=None, is_train=True, n_st
 
     return samples
 
-def split_data(data_file):
-    dirname = os.path.dirname(data_file)
-    with open(data_file, 'rb') as handle:
-        data = pickle.load(handle)
-
-    data = data['train']
-    print("origin length of data", len(data))
-    n_data = len(data)
-    n_test = n_data // 10
-    n_train = n_data - n_test
-    print("n_train: %d, n_test: %d" % (n_train, n_test))
-
-    # shuffle
-    data = np.array(data)
-    # index = np.arange(n_data)
-    with open('shuffle_order.pickle', 'rb') as f:
-        index = pickle.load(f)
-    np.random.shuffle(index)
-    data = data[index]
-
-
-    with open(os.path.join(dirname, 'worded_data_train.pickle'), 'wb') as handle:
-        pickle.dump(data[:n_train], handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-    with open(os.path.join(dirname, 'worded_data_test.pickle'), 'wb') as handle:
-        pickle.dump(data[n_train:], handle, protocol=pickle.HIGHEST_PROTOCOL)
-
 
 if __name__ == '__main__':
     import argparse
@@ -461,4 +414,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # for loading training data
-    convert_midis_to_worded_data(args.midi_folder, args.save_folder)
+    midi_folder = Path(args.midi_folder)
+    save_folder = Path(args.save_folder)
+    convert_midis_to_worded_data(midi_folder, save_folder)

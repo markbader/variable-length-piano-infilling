@@ -199,11 +199,6 @@ class XLNetForPredictingMiddleNotes(torch.nn.Module):
         path_saved_ckpt = os.path.join(args.save_path, 'loss')
 
         # calculate the index of start of bar6 and the end of bar9
-        start_end = np.zeros((len(training_data), 2))
-        for i in range(len(training_data)):
-            start_end[i][0] = np.nonzero(training_data[i, :, 1] == 6)[0][0]
-            start_end[i][1] = np.nonzero(training_data[i, :, 1] == 9)[0][-1]
-
 
         start_time = time.time()
         optimizer = AdamW(self.parameters(), lr=args.init_lr, weight_decay=0.01)
@@ -214,7 +209,6 @@ class XLNetForPredictingMiddleNotes(torch.nn.Module):
             for train_iter in range(num_batches):
 
                 input_ids = torch.from_numpy(training_data[train_iter * args.batch_size : (train_iter + 1) * args.batch_size]).to(device)
-                start_end_batch = start_end[train_iter * args.batch_size : (train_iter + 1) * args.batch_size]
                 # attn_mask: mask to avoid attending to <PAD> tokens
                 # 0: do not attend, 1: attend
                 attn_mask = (input_ids[:, :, 0] != self.tempo_pad_word).float()
@@ -447,7 +441,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=6)
     parser.add_argument('--target-max-percent', type=float, default=0.25, help="Up to `seq_len * target_max_percent` tokens will be masked out for prediction")
     parser.add_argument('--n-step-bars', type=int, default=8, help='how many bars to step before next training data fetching (the smaller the more training data)')
-    parser.add_argument('--max-seq-len', type=int, default=512, help='all sequences are padded to `max_seq_len`')
+    parser.add_argument('--max-seq-len', type=int, default=1024, help='all sequences are padded to `max_seq_len`')
     parser.add_argument('--train-epochs', type=int, default=2000, help='number of training epochs')
     parser.add_argument('--init-lr', type=float, default=1e-4, help='initial learning rate')
 
