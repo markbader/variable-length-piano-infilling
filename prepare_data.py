@@ -346,7 +346,7 @@ def convert_midis_to_worded_data(midi_folder: Path, save_folder: Path):
     construct_dict(save_dict_path)
     tuple_event_to_word(tuple_events, dict_file=save_dict_path, save_path=save_data_path)
 
-def prepare_data_for_training(data_file, e2w=None, w2e=None, is_train=True, n_step_bars=16, max_len=1024):
+def prepare_data_for_training(data_file, e2w=None, w2e=None, is_train=True, n_step_bars=16, max_len=512):
     assert e2w != None and w2e != None
 
     print("Loading from data file: %s" % data_file)
