@@ -295,7 +295,7 @@ def load_tuple_event(files=None):
         try:
             events = extract_tuple_events(midifile)
             events = group_by_bar(events)   # shape of events: [n_bars, n_notes_per_bar]
-            assert len(events) <= 16, f"Expected lenght of 16 bars but got {len(events)}"
+            assert len(events) == 16, f"Expected lenght of 16 bars but got {len(events)}"
             data.append(events)
             counter += 1
         except Exception as e:
