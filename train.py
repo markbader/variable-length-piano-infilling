@@ -313,6 +313,8 @@ class XLNetForPredictingMiddleNotes(torch.nn.Module):
 
     def predict(self, data=None, song_id=0, n_predictions=10, start_bar=6, end_bar=9, filename=None, save_prediction_only=False):
         datum = np.array(data[song_id:song_id + 1][0])[None]
+        datum_start = datum[datum[:, :, 1] < start_bar]
+        datum_end = datum[datum[:, :, 1] >= end_bar]
         seq_len = datum.shape[1]
 
         start_note = np.nonzero(datum[0, :, 1] == start_bar)[0][0]
@@ -401,7 +403,7 @@ class XLNetForPredictingMiddleNotes(torch.nn.Module):
             bar_ids = bar_ids.cpu().detach().numpy()[0]
             input_ids[:, 1] = bar_ids
 
-            generated_ids = input_ids[((input_ids[:, 1] >= start_bar) & (input_ids[:, 1] <= end_bar))]
+            generated_ids = input_ids[((input_ids[:, 1] >= start_bar) & (input_ids[:, 1] < end_bar))]
             print('done.')
 
             if save_prediction_only:
@@ -409,8 +411,9 @@ class XLNetForPredictingMiddleNotes(torch.nn.Module):
                 input_ids = generated_ids
             else:
                 # shift future context to end of prediction
-                max_predicted_bar =  max(generated_ids[:, 1])
-                input_ids[input_ids[:, 1] >= end_bar][:, 1] -= end_bar - max_predicted_bar
+                # max_predicted_bar =  max(generated_ids[:, 1])
+                #input_ids[input_ids[:, 1] >= end_bar][:, 1] -= end_bar - max_predicted_bar
+                input_ids = np.concatenate((datum_start, generated_ids, datum_end), axis=0)
 
             if n_predictions == 1:
                 print(f'Saving midi to {save_midi_folder}/{filename}', end=' ... ')

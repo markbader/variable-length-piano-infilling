@@ -55,14 +55,14 @@ configuration = XLNetConfig().from_dict({
 def convert_midis_to_worded_data(midi1, midi2):
     midis = []
     try:
-        note_items, tempo_items = utils.read_items(midi1)
+        note_items, tempo_items, time_sig = utils.read_items(midi1)
         midis.append(midi1)
-        note_items, tempo_items = utils.read_items(midi2)
+        note_items, tempo_items, time_sig = utils.read_items(midi2)
         midis.append(midi2)
     except Exception as e:
         print('At least one of the midi files is corrupted.', e)
 
-    tuple_events = prepare_data.load_tuple_event(midis)
+    tuple_events = prepare_data.load_tuple_event(midis, is_train=False)
     save_data_path = 'worded_data_for_prediction.pickle'
 
     prepare_data.tuple_event_to_word(tuple_events, dict_file=args.dict_file, save_path=save_data_path)
@@ -87,6 +87,7 @@ def prepare_data_for_prediction(data_file, e2w=None, w2e=None, length=0):
         # midis.append([copy.deepcopy(note_tuple) for bar in midi for note_tuple in bar])
 
     midis = np.array([[copy.deepcopy(note_tuple) for bar in midi for note_tuple in bar]])
+    print(midis)
 
     return midis, len(data[0])
 
@@ -98,7 +99,7 @@ if __name__ == "__main__":
     parser.add_argument('--begin', type=str, default="begin_orig.mid")
     parser.add_argument('--end', type=str, default="end_orig.mid")
     parser.add_argument('--for-dir', type=str)
-    parser.add_argument('--length', type=int, default=4)
+    parser.add_argument('--length', type=int, default=5)
     parser.add_argument('--n-songs', type=int, default=1)
 
     # for prediction phase

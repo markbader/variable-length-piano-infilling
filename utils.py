@@ -135,6 +135,22 @@ def group_items(items: List[Item], max_time: int, time_signatures: List[containe
                 insiders.append(item)
         overall = [start] + insiders + [end]
         groups.append(overall)
+
+    i = 0
+    wanted_ticks_per_bar = DEFAULT_RESOLUTION * 4
+    while i < len(groups):
+        ticks_per_bar = groups[i][-1] - groups[i][0]
+        begin = groups[i - 1][-1] if i else 0
+        end = begin + (groups[i][-1] - groups[i][0]) * wanted_ticks_per_bar // ticks_per_bar
+        for item in groups[i][1:-1]:
+            item.start = begin + wanted_ticks_per_bar * (item.start - groups[i][0]) // ticks_per_bar
+            if item.name == 'Note':
+                item.end = begin + wanted_ticks_per_bar * (item.end - groups[i][0]) // ticks_per_bar
+        groups[i][0] = begin
+        groups[i][-1] = end
+
+        i += 1
+
     return groups
 
 # define "Event" for event storage

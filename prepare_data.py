@@ -286,16 +286,17 @@ def construct_dict(save_dict_path: Path):
         pickle.dump([event2word, word2event], f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def load_tuple_event(files=None):
+def load_tuple_event(files=None, is_train=True):
     data = []
     counter = 0
-    if files == None:
+    if not files:
         raise ValueError('No MIDI files in given folder.')
     for midifile in files:
         try:
             events = extract_tuple_events(midifile)
             events = group_by_bar(events)   # shape of events: [n_bars, n_notes_per_bar]
-            assert len(events) == 16, f"Expected lenght of 16 bars but got {len(events)}"
+            if is_train:
+                assert len(events) == 16, f"Expected lenght of 16 bars but got {len(events)}"
             data.append(events)
             counter += 1
         except Exception as e:
@@ -326,7 +327,6 @@ def tuple_event_to_word(data, dict_file:Path=None, save_path:Path=None):
             words_in_midi.append(words_in_bar)
         worded_data.append(words_in_midi)
 
-    # assert(evented_data == data)
     with open(save_path, 'wb') as handle:
         pickle.dump(worded_data, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
